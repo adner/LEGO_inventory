@@ -216,6 +216,23 @@ def add_to_inventory(data: dict) -> None:
         log(LOG, f"add_to_inventory error: {e}")
 
 
+def list_inventory() -> None:
+    """Query Dataverse for all LEGO sets and send the list via Telegram."""
+    try:
+        result = subprocess.run(
+            ["dotnet", "run", "--project", "DataverseTool", "--", "list-legosets"],
+            capture_output=True, text=True, timeout=120,
+        )
+        if result.returncode == 0:
+            send_message(result.stdout.strip() or "No LEGO sets found.")
+        else:
+            error = result.stderr.strip() or result.stdout.strip()
+            send_message(f"Failed to list inventory: {error}")
+    except Exception as e:
+        send_message(f"Error listing inventory: {e}")
+        log(LOG, f"list_inventory error: {e}")
+
+
 # --- Worker thread ---
 
 def worker():
@@ -232,10 +249,14 @@ def worker():
             elif cmd == "/start":
                 send_plain("Lego Inventory Bot is running. Send /help for available commands.")
                 log(LOG, "Sent /start response")
+            elif cmd == "/inventory":
+                list_inventory()
+                log(LOG, "Sent inventory list")
             elif cmd == "/help":
                 help_text = (
                     "**Available commands:**\n\n"
                     "/clear — Clear conversation history\n"
+                    "/inventory — List all LEGO sets in inventory\n"
                     "/help — Show this help message\n"
                     "/start — Welcome message\n\n"
                     "Send any other message to chat with the AI assistant."

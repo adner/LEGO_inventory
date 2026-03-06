@@ -50,6 +50,24 @@ def main():
         print(f"Failed: {result}")
         sys.exit(1)
 
+    # Register bot commands
+    commands = json.dumps([
+        {"command": "inventory", "description": "List all LEGO sets in inventory"},
+        {"command": "clear", "description": "Clear conversation history"},
+        {"command": "help", "description": "Show available commands"},
+    ])
+    cmd_data = urllib.parse.urlencode({"commands": commands}).encode()
+    cmd_url = f"https://api.telegram.org/bot{bot_token}/setMyCommands"
+    cmd_req = urllib.request.Request(cmd_url, data=cmd_data, method="POST")
+
+    with urllib.request.urlopen(cmd_req) as resp:
+        cmd_result = json.loads(resp.read())
+
+    if cmd_result.get("ok"):
+        print("Bot commands registered successfully.")
+    else:
+        print(f"Failed to register commands: {cmd_result}")
+
 
 if __name__ == "__main__":
     main()
