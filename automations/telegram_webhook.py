@@ -77,7 +77,7 @@ def process_message(text: str, message_id: int | None = None,
             "1. Find the official box image URL for this set (search the web if needed, "
             "or use the pattern https://images.brickset.com/sets/large/<number>-1.jpg)\n"
             "2. Send the result using tools/telegram_send_lego_card.py with these arguments:\n"
-            "   --name \"<set name>\" --number <set number> --pieces <piece count> --image \"<box image URL>\"\n"
+            f"   --name \"<set name>\" --number <set number> --pieces <piece count> --image \"<box image URL>\" --user-image \"{image_path}\"\n"
             "Do NOT use tools/telegram_send.py for Lego set identification results.\n"
             "If you can't identify the set or the image is not a Lego set, "
             "use tools/telegram_send.py to let the user know.\n\n"
@@ -163,6 +163,7 @@ def add_to_inventory(data: dict) -> None:
     number = data.get("number", "")
     pieces = data.get("pieces", "")
     image_url = data.get("image", "")
+    user_image = data.get("user_image", "")
 
     try:
         # Download box image to telegram_images folder
@@ -185,13 +186,31 @@ def add_to_inventory(data: dict) -> None:
         ]
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
 
-        if result.returncode == 0:
-            send_message(f"Added **{name}** (#{number}) to inventory!")
-            log(LOG, f"Added to inventory: {name} #{number}")
-        else:
+        if result.returncode != 0:
             error = result.stderr.strip() or result.stdout.strip()
             send_message(f"Failed to add set: {error}")
             log(LOG, f"DataverseTool error: {error}")
+            return
+
+        log(LOG, f"Added to inventory: {name} #{number}")
+
+        # Attach user's photo as a note if available
+        if user_image and os.path.exists(user_image):
+            note_cmd = [
+                "dotnet", "run", "--project", "DataverseTool", "--",
+                "add-note",
+                "--number", number,
+                "--subject", "User photo",
+                "--text", f"Photo submitted when adding set to inventory.",
+                "--image", user_image,
+            ]
+            note_result = subprocess.run(note_cmd, capture_output=True, text=True, timeout=120)
+            if note_result.returncode == 0:
+                log(LOG, f"Added user photo note for #{number}")
+            else:
+                log(LOG, f"Failed to add note: {note_result.stderr.strip() or note_result.stdout.strip()}")
+
+        send_message(f"Added **{name}** (#{number}) to inventory!")
     except Exception as e:
         send_message(f"Error adding set to inventory: {e}")
         log(LOG, f"add_to_inventory error: {e}")
@@ -330,11 +349,13 @@ class WebhookHandler(BaseHTTPRequestHandler):
             pieces = html.escape(params.get("pieces", ["N/A"])[0])
             image = params.get("image", [""])[0]
             image_escaped = html.escape(image)
+            user_image = html.escape(params.get("user_image", [""])[0])
 
             page = MINIAPP_HTML.replace("{{NAME}}", name) \
                                .replace("{{NUMBER}}", number) \
                                .replace("{{PIECES}}", pieces) \
-                               .replace("{{IMAGE}}", image_escaped)
+                               .replace("{{IMAGE}}", image_escaped) \
+                               .replace("{{USER_IMAGE}}", user_image)
 
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
@@ -458,7 +479,8 @@ MINIAPP_HTML = """\
         name: "{{NAME}}",
         number: "{{NUMBER}}",
         pieces: "{{PIECES}}",
-        image: "{{IMAGE}}"
+        image: "{{IMAGE}}",
+        user_image: "{{USER_IMAGE}}"
       })
     }).then(function() {
       btn.textContent = 'Added!';

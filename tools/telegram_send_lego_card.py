@@ -21,6 +21,7 @@ def main():
     parser.add_argument("--number", required=True, help="Lego set number")
     parser.add_argument("--pieces", required=True, help="Number of pieces")
     parser.add_argument("--image", required=True, help="URL of the box image")
+    parser.add_argument("--user-image", default="", help="Local path to user's photo")
     args = parser.parse_args()
 
     base_url = get_webapp_base_url()
@@ -29,6 +30,7 @@ def main():
         "number": args.number,
         "pieces": args.pieces,
         "image": args.image,
+        "user_image": args.user_image,
     })
     webapp_url = f"{base_url}/miniapp?{params}"
 
