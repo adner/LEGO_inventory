@@ -11,6 +11,7 @@ import queue
 import subprocess
 import threading
 import urllib.parse
+import urllib.request
 from datetime import date
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
@@ -154,6 +155,48 @@ def process_message(text: str, message_id: int | None = None,
         log(LOG, "Could not parse session ID from Claude output")
 
 
+# --- Dataverse actions ---
+
+def add_to_inventory(data: dict) -> None:
+    """Download box image and create LEGO set in Dataverse via DataverseTool CLI."""
+    name = data.get("name", "")
+    number = data.get("number", "")
+    pieces = data.get("pieces", "")
+    image_url = data.get("image", "")
+
+    try:
+        # Download box image to telegram_images folder
+        image_path = ""
+        if image_url:
+            images_dir = REPO_DIR / "telegram_images"
+            images_dir.mkdir(exist_ok=True)
+            suffix = os.path.splitext(urllib.parse.urlparse(image_url).path)[1] or ".jpg"
+            image_path = str(images_dir / f"legoset_{number}{suffix}")
+            urllib.request.urlretrieve(image_url, image_path)
+            log(LOG, f"Downloaded box image to {image_path}")
+
+        cmd = [
+            "dotnet", "run", "--project", "DataverseTool", "--",
+            "create-legoset",
+            "--name", name,
+            "--number", number,
+            "--pieces", pieces,
+            "--image", image_path,
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+
+        if result.returncode == 0:
+            send_message(f"Added **{name}** (#{number}) to inventory!")
+            log(LOG, f"Added to inventory: {name} #{number}")
+        else:
+            error = result.stderr.strip() or result.stdout.strip()
+            send_message(f"Failed to add set: {error}")
+            log(LOG, f"DataverseTool error: {error}")
+    except Exception as e:
+        send_message(f"Error adding set to inventory: {e}")
+        log(LOG, f"add_to_inventory error: {e}")
+
+
 # --- Worker thread ---
 
 def worker():
@@ -195,7 +238,26 @@ def worker():
 
 class WebhookHandler(BaseHTTPRequestHandler):
     def do_POST(self):
-        # Verify secret token
+        parsed = urllib.parse.urlparse(self.path)
+
+        # Handle Mini App "Add to Inventory" action
+        if parsed.path == "/add-to-inventory":
+            length = int(self.headers.get("Content-Length", 0))
+            body = self.rfile.read(length)
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            try:
+                data = json.loads(body)
+                log(LOG, f"Add to inventory: {data.get('name')} #{data.get('number')}")
+                threading.Thread(target=add_to_inventory, args=(data,), daemon=True).start()
+                self.wfile.write(b'{"ok":true}')
+            except (json.JSONDecodeError, KeyError) as e:
+                log(LOG, f"Error parsing add-to-inventory: {e}")
+                self.wfile.write(b'{"ok":false}')
+            return
+
+        # Telegram webhook
         token = self.headers.get("X-Telegram-Bot-Api-Secret-Token", "")
         if token != SECRET_TOKEN:
             self.send_response(403)
@@ -225,6 +287,7 @@ class WebhookHandler(BaseHTTPRequestHandler):
 
             msg = update.get("message", {})
             msg_chat_id = str(msg.get("chat", {}).get("id", ""))
+
             text = msg.get("text") or msg.get("caption") or ""
             photos = msg.get("photo")
             document = msg.get("document")
@@ -345,6 +408,22 @@ MINIAPP_HTML = """\
     font-size: 18px;
     font-weight: 600;
   }
+  .add-btn {
+    display: block;
+    width: 100%;
+    margin-top: 16px;
+    padding: 14px;
+    border: none;
+    border-radius: 12px;
+    font-size: 16px;
+    font-weight: 600;
+    cursor: pointer;
+    background: var(--tg-theme-button-color, #3390ec);
+    color: var(--tg-theme-button-text-color, #fff);
+  }
+  .add-btn:active {
+    opacity: 0.8;
+  }
 </style>
 </head>
 <body>
@@ -364,9 +443,31 @@ MINIAPP_HTML = """\
     </div>
   </div>
 </div>
+<button class="add-btn" id="add-btn">Add to Inventory</button>
 <script>
   Telegram.WebApp.ready();
   Telegram.WebApp.expand();
+  document.getElementById('add-btn').addEventListener('click', function() {
+    var btn = this;
+    btn.disabled = true;
+    btn.textContent = 'Adding...';
+    fetch('/add-to-inventory', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        name: "{{NAME}}",
+        number: "{{NUMBER}}",
+        pieces: "{{PIECES}}",
+        image: "{{IMAGE}}"
+      })
+    }).then(function() {
+      btn.textContent = 'Added!';
+      setTimeout(function() { Telegram.WebApp.close(); }, 1000);
+    }).catch(function() {
+      btn.textContent = 'Error - Try Again';
+      btn.disabled = false;
+    });
+  });
 </script>
 </body>
 </html>
