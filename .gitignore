@@ -1,0 +1,5 @@
+tools/.env
+automations/telegram_session_id
+__pycache__/
+telegram_images/
+telegram_files/
