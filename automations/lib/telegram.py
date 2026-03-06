@@ -103,7 +103,7 @@ def send_message(text: str, convert_markdown: bool = True) -> bool:
             parse_mode = None
 
         # Log the message
-        with open(LOG_FILE, "a") as f:
+        with open(LOG_FILE, "a", encoding="utf-8") as f:
             f.write(f"=== {datetime.now():%Y-%m-%d %H:%M:%S} ===\n")
             f.write(f"Parse mode: {parse_mode or 'none'}\n")
             f.write(f"Original: {chunk[:200]}...\n" if len(chunk) > 200 else f"Original: {chunk}\n")
@@ -119,6 +119,43 @@ def send_message(text: str, convert_markdown: bool = True) -> bool:
 def send_plain(text: str) -> bool:
     """Send a plain text message (no Markdown conversion)."""
     return send_message(text, convert_markdown=False)
+
+
+def send_message_with_webapp(text: str, button_text: str, webapp_url: str) -> bool:
+    """Send a message with an inline keyboard button that opens a Mini App."""
+    bot_token, chat_id = get_telegram_credentials()
+
+    reply_markup = json.dumps({
+        "inline_keyboard": [[{
+            "text": button_text,
+            "web_app": {"url": webapp_url},
+        }]]
+    })
+
+    data = {
+        "chat_id": chat_id,
+        "text": text,
+        "reply_markup": reply_markup,
+    }
+
+    reply_to = os.environ.get("TELEGRAM_REPLY_TO_MESSAGE_ID")
+    if reply_to:
+        data["reply_to_message_id"] = reply_to
+
+    encoded = urllib.parse.urlencode(data).encode()
+    url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
+    req = urllib.request.Request(url, data=encoded, method="POST")
+
+    try:
+        with urllib.request.urlopen(req) as resp:
+            result = json.loads(resp.read())
+            if result.get("ok"):
+                return True
+            print(f"Telegram API error: {result}", flush=True)
+            return False
+    except urllib.error.URLError as e:
+        print(f"Failed to send Telegram message: {e}", flush=True)
+        return False
 
 
 IMAGES_DIR = REPO_DIR / "telegram_images"

@@ -34,6 +34,12 @@ def get_webhook_secret() -> str:
     return env["TELEGRAM_WEBHOOK_SECRET"]
 
 
+def get_webapp_base_url() -> str:
+    """Return the base URL for Mini App pages from .env file."""
+    env = load_env()
+    return env["WEBAPP_BASE_URL"].rstrip("/")
+
+
 def log(log_file: str, message: str) -> None:
     """Append a timestamped message to a log file."""
     from datetime import datetime

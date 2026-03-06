@@ -4,11 +4,13 @@
 Designed to run behind Microsoft Dev Tunnels which provides HTTPS termination.
 """
 
+import html
 import json
 import os
 import queue
 import subprocess
 import threading
+import urllib.parse
 from datetime import date
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
@@ -70,12 +72,14 @@ def process_message(text: str, message_id: int | None = None,
         prompt += f"The user sent an image saved at {image_path}. Use the Read tool to view it.\n"
         prompt += (
             "This is a Lego Inventory Bot. Analyze the image to identify the Lego set. "
-            "Respond with:\n"
-            "- **Set name**\n"
-            "- **Set number**\n"
-            "- **Number of pieces**\n"
-            "If you can't identify the exact set, give your best guess and say so. "
-            "If the image is not a Lego set, let the user know.\n\n"
+            "Once you identify the set, you MUST:\n"
+            "1. Find the official box image URL for this set (search the web if needed, "
+            "or use the pattern https://images.brickset.com/sets/large/<number>-1.jpg)\n"
+            "2. Send the result using tools/telegram_send_lego_card.py with these arguments:\n"
+            "   --name \"<set name>\" --number <set number> --pieces <piece count> --image \"<box image URL>\"\n"
+            "Do NOT use tools/telegram_send.py for Lego set identification results.\n"
+            "If you can't identify the set or the image is not a Lego set, "
+            "use tools/telegram_send.py to let the user know.\n\n"
         )
     if doc_path:
         prompt += f"The user also sent a document saved at {doc_path}. Use the Read tool to view it.\n\n"
@@ -254,6 +258,27 @@ class WebhookHandler(BaseHTTPRequestHandler):
             log(LOG, f"Error parsing update: {e}")
 
     def do_GET(self):
+        parsed = urllib.parse.urlparse(self.path)
+
+        if parsed.path == "/miniapp":
+            params = urllib.parse.parse_qs(parsed.query)
+            name = html.escape(params.get("name", ["Unknown"])[0])
+            number = html.escape(params.get("number", ["N/A"])[0])
+            pieces = html.escape(params.get("pieces", ["N/A"])[0])
+            image = params.get("image", [""])[0]
+            image_escaped = html.escape(image)
+
+            page = MINIAPP_HTML.replace("{{NAME}}", name) \
+                               .replace("{{NUMBER}}", number) \
+                               .replace("{{PIECES}}", pieces) \
+                               .replace("{{IMAGE}}", image_escaped)
+
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.end_headers()
+            self.wfile.write(page.encode("utf-8"))
+            return
+
         self.send_response(200)
         self.send_header("Content-Type", "text/plain")
         self.end_headers()
@@ -262,6 +287,90 @@ class WebhookHandler(BaseHTTPRequestHandler):
     def log_message(self, format, *args):
         """Suppress default stderr logging."""
         pass
+
+
+MINIAPP_HTML = """\
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lego Set Details</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: var(--tg-theme-bg-color, #fff);
+    color: var(--tg-theme-text-color, #000);
+    padding: 16px;
+  }
+  .card {
+    border-radius: 16px;
+    overflow: hidden;
+    background: var(--tg-theme-secondary-bg-color, #f0f0f0);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+  }
+  .card img {
+    width: 100%;
+    aspect-ratio: 4/3;
+    object-fit: contain;
+    background: #fff;
+    padding: 12px;
+  }
+  .card .info {
+    padding: 20px;
+  }
+  .card .set-name {
+    font-size: 22px;
+    font-weight: 700;
+    margin-bottom: 12px;
+    line-height: 1.3;
+  }
+  .card .details {
+    display: flex;
+    gap: 24px;
+  }
+  .card .detail {
+    display: flex;
+    flex-direction: column;
+  }
+  .card .detail .label {
+    font-size: 12px;
+    text-transform: uppercase;
+    opacity: 0.6;
+    margin-bottom: 2px;
+  }
+  .card .detail .value {
+    font-size: 18px;
+    font-weight: 600;
+  }
+</style>
+</head>
+<body>
+<div class="card">
+  <img src="{{IMAGE}}" alt="{{NAME}}" onerror="this.style.display='none'">
+  <div class="info">
+    <div class="set-name">{{NAME}}</div>
+    <div class="details">
+      <div class="detail">
+        <span class="label">Set Number</span>
+        <span class="value">{{NUMBER}}</span>
+      </div>
+      <div class="detail">
+        <span class="label">Pieces</span>
+        <span class="value">{{PIECES}}</span>
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+  Telegram.WebApp.ready();
+  Telegram.WebApp.expand();
+</script>
+</body>
+</html>
+"""
 
 
 def main():
