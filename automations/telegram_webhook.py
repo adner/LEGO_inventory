@@ -67,13 +67,22 @@ def process_message(text: str, message_id: int | None = None,
         "Keep each message under 3000 characters; split into multiple messages if needed.\n\n"
     )
     if image_path:
-        prompt += f"The user also sent an image saved at {image_path}. Use the Read tool to view it.\n\n"
+        prompt += f"The user sent an image saved at {image_path}. Use the Read tool to view it.\n"
+        prompt += (
+            "This is a Lego Inventory Bot. Analyze the image to identify the Lego set. "
+            "Respond with:\n"
+            "- **Set name**\n"
+            "- **Set number**\n"
+            "- **Number of pieces**\n"
+            "If you can't identify the exact set, give your best guess and say so. "
+            "If the image is not a Lego set, let the user know.\n\n"
+        )
     if doc_path:
         prompt += f"The user also sent a document saved at {doc_path}. Use the Read tool to view it.\n\n"
     if text:
         prompt += f"User message: {text}"
     elif image_path or doc_path:
-        prompt += "The user sent a file without any text."
+        prompt += "The user sent the file without any additional text."
     else:
         prompt += "The user sent an empty message."
 
