@@ -33,8 +33,6 @@ try
 
     return args[0].ToLower() switch
     {
-        "create-incident" => CreateIncident(serviceClient, args[1..]),
-        "get-opportunity-value" => GetOpportunityValue(serviceClient),
         "create-legoset" => CreateLegoSet(serviceClient, args[1..]),
         "get-legoset" => GetLegoSet(serviceClient, args[1..]),
         "list-legosets" => ListLegoSets(serviceClient),
@@ -57,13 +55,6 @@ static int PrintUsage()
     Console.WriteLine("Usage: DataverseTool <command> [options]");
     Console.WriteLine();
     Console.WriteLine("Commands:");
-    Console.WriteLine("  create-incident --title <title> --description <desc> --origin <origin> --priority <priority> --customer <name>");
-    Console.WriteLine("    origin:   Phone, Email, Web, IoT");
-    Console.WriteLine("    priority: High, Normal, Low");
-    Console.WriteLine();
-    Console.WriteLine("  get-opportunity-value");
-    Console.WriteLine();
-    Console.WriteLine("LEGO Set commands:");
     Console.WriteLine("  create-legoset --name <name> --number <number> --pieces <count> --image <path>");
     Console.WriteLine("  get-legoset --number <number>");
     Console.WriteLine("  list-legosets");
@@ -73,105 +64,7 @@ static int PrintUsage()
     return 1;
 }
 
-static int CreateIncident(ServiceClient serviceClient, string[] args)
-{
-    string? title = null, description = null, customer = null;
-    string? origin = null, priority = null;
-
-    for (int i = 0; i < args.Length - 1; i += 2)
-    {
-        switch (args[i].ToLower())
-        {
-            case "--title": title = args[i + 1]; break;
-            case "--description": description = args[i + 1]; break;
-            case "--origin": origin = args[i + 1]; break;
-            case "--priority": priority = args[i + 1]; break;
-            case "--customer": customer = args[i + 1]; break;
-        }
-    }
-
-    if (title is null || description is null || origin is null || priority is null || customer is null)
-    {
-        Console.WriteLine("Error: All parameters are required: --title, --description, --origin, --priority, --customer");
-        return 1;
-    }
-
-    int caseOriginCode = origin.ToLower() switch
-    {
-        "phone" => 1,
-        "email" => 2,
-        "web" => 3,
-        "iot" => 700610000,
-        _ => throw new InvalidOperationException($"Invalid origin '{origin}'. Use: Phone, Email, Web, IoT")
-    };
-
-    int priorityCode = priority.ToLower() switch
-    {
-        "high" => 1,
-        "normal" => 2,
-        "low" => 3,
-        _ => throw new InvalidOperationException($"Invalid priority '{priority}'. Use: High, Normal, Low")
-    };
-
-    QueryExpression contactQuery = new("contact")
-    {
-        ColumnSet = new ColumnSet("contactid", "fullname"),
-        TopCount = 1,
-        Criteria = new FilterExpression(LogicalOperator.And)
-        {
-            Conditions =
-            {
-                new ConditionExpression("fullname", ConditionOperator.Like, $"%{customer}%")
-            }
-        }
-    };
-
-    EntityCollection contacts = serviceClient.RetrieveMultiple(contactQuery);
-
-    if (contacts.Entities.Count == 0)
-    {
-        Console.WriteLine($"Error: No contact found matching '{customer}'.");
-        return 1;
-    }
-
-    Entity contact = contacts.Entities[0];
-    Console.WriteLine($"Found contact: {contact.GetAttributeValue<string>("fullname")} ({contact.Id})");
-
-    Entity incident = new("incident");
-    incident["title"] = title;
-    incident["description"] = description;
-    incident["caseorigincode"] = new OptionSetValue(caseOriginCode);
-    incident["prioritycode"] = new OptionSetValue(priorityCode);
-    incident["customerid"] = new EntityReference("contact", contact.Id);
-
-    Guid incidentId = serviceClient.Create(incident);
-    Console.WriteLine($"Incident created. ID: {incidentId}");
-    return 0;
-}
-
-static int GetOpportunityValue(ServiceClient serviceClient)
-{
-    QueryExpression query = new("opportunity")
-    {
-        ColumnSet = new ColumnSet("estimatedvalue")
-    };
-
-    EntityCollection opportunities = serviceClient.RetrieveMultiple(query);
-
-    decimal totalValue = 0;
-    foreach (Entity opp in opportunities.Entities)
-    {
-        Money? value = opp.GetAttributeValue<Money>("estimatedvalue");
-        if (value != null)
-            totalValue += value.Value;
-    }
-
-    Console.WriteLine($"Total opportunity value: {totalValue:C}");
-    Console.WriteLine($"Number of opportunities: {opportunities.Entities.Count}");
-    return 0;
-}
-
-// --- LEGO Set helpers ---
+// --- Helpers ---
 
 static Entity? FindLegoSetByNumber(ServiceClient serviceClient, int setNumber)
 {

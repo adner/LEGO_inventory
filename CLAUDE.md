@@ -33,3 +33,8 @@ Free-text messages are routed to Claude CLI for processing.
 ## Tools
 
 - `tools/telegram_send.py` — CLI tool to send Telegram messages with Markdown support
+- `tools/telegram_send_lego_card.py` — Send a Telegram Mini App card for a LEGO set (--name, --number, --pieces, --image)
+
+## Dataverse Integration
+
+LEGO set inventory is stored in Microsoft Dataverse. Use the skill in `.claude/skills/dataverse-lego-inventory.md` for managing sets (create, list, get, update, delete) and adding notes with photos. Full CLI docs in `DataverseTool/DataverseTool.md`.
